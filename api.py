@@ -6,6 +6,7 @@ import time
 import base64
 import random
 import asyncio
+import hashlib
 import warnings
 import contextlib
 import multiprocessing
@@ -134,6 +135,21 @@ print(f"[INFO] Host cores={cpu_count} | PyTorch threads={threads}.")
 # TTA label=2 n=1400 -> Pleural Effusion (7000 total * 0.20 = 1400)
 classes = ["Normal", "Pneumonia", "Pleural Effusion"]
 
+# ─── PREDICTION CACHE (avoids re-running inference on identical images) ───
+prediction_cache: dict = {}
+
+# ─── ONNX Runtime (optional — loads .onnx models when available for 3x faster inference) ───
+try:
+    import onnxruntime as ort
+    _ONNX_AVAILABLE = True
+    print("[STARTUP] ONNX Runtime available — will prefer .onnx models if present.")
+except ImportError:
+    _ONNX_AVAILABLE = False
+    print("[STARTUP] ONNX Runtime not installed — using PyTorch .pth models.")
+
+# Track which models are loaded as ONNX sessions vs PyTorch modules
+_model_types: dict = {}  # key: model_name, value: "onnx" or "pytorch"
+
 
 def load_pytorch_model(model_name, checkpoint_path, num_classes=3):
     model = timm.create_model(model_name, pretrained=False, num_classes=num_classes)
@@ -147,6 +163,37 @@ def load_pytorch_model(model_name, checkpoint_path, num_classes=3):
     return model
 
 
+def load_model_with_onnx_fallback(model_name, onnx_path, pth_path, label, num_classes=3):
+    """Try loading ONNX model first; fall back to PyTorch .pth if unavailable."""
+    if _ONNX_AVAILABLE and os.path.exists(onnx_path):
+        session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        _model_types[label] = "onnx"
+        print(f"[STARTUP] {label} loaded via ONNX Runtime ({onnx_path})")
+        return session
+    else:
+        model = load_pytorch_model(model_name, pth_path, num_classes)
+        _model_types[label] = "pytorch"
+        print(f"[STARTUP] {label} loaded via PyTorch ({pth_path})")
+        return model
+
+
+def _run_model(model, input_tensor, label):
+    """Run inference on a single model, handling both ONNX and PyTorch."""
+    if _model_types.get(label) == "onnx":
+        # ONNX expects numpy float32 input
+        input_np = input_tensor.cpu().numpy()
+        input_name = model.get_inputs()[0].name
+        outputs = model.run(None, {input_name: input_np})
+        logits = outputs[0]  # shape (1, num_classes)
+        # Apply softmax manually
+        exp_logits = np.exp(logits - np.max(logits, axis=1, keepdims=True))
+        return exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+    else:
+        # PyTorch path
+        out = model(input_tensor)
+        return F.softmax(out, dim=1).cpu().numpy()
+
+
 def load_models_background():
     """Load all models in a background thread so the HTTP server starts immediately."""
     global densenet_model, convnext_model, maxvit_model, meta_learner, models_ready, startup_time
@@ -155,25 +202,32 @@ def load_models_background():
     print("[STARTUP] Loading all models in background thread...")
     models_ready = False
 
-    densenet_model = load_pytorch_model(
-        "densenet121", "Models/densenet121/best_tta.pth"
+    densenet_model = load_model_with_onnx_fallback(
+        "densenet121",
+        "Models/densenet121/model.onnx",
+        "Models/densenet121/best_tta.pth",
+        "DenseNet121",
     )
-    print("[STARTUP] DenseNet121 loaded")
-    convnext_model = load_pytorch_model(
-        "convnextv2_base.fcmae_ft_in22k_in1k", "Models/convnext_v2_base/best_tta.pth"
+    convnext_model = load_model_with_onnx_fallback(
+        "convnextv2_base.fcmae_ft_in22k_in1k",
+        "Models/convnext_v2_base/model.onnx",
+        "Models/convnext_v2_base/best_tta.pth",
+        "ConvNeXtV2",
     )
-    print("[STARTUP] ConvNeXtV2-Base loaded")
-    maxvit_model = load_pytorch_model(
-        "maxvit_base_tf_512.in1k", "Models/maxvit_base/best_tta.pth"
+    maxvit_model = load_model_with_onnx_fallback(
+        "maxvit_base_tf_512.in1k",
+        "Models/maxvit_base/model.onnx",
+        "Models/maxvit_base/best_tta.pth",
+        "MaxViT",
     )
-    print("[STARTUP] MaxViT-Base loaded")
 
     meta_learner = joblib.load("Models/meta_learner_logistic.pkl")
     print("[STARTUP] Meta-Learner loaded")
 
-    # Enable gradients ONLY on DenseNet (needed for GradCAM++)
-    for param in densenet_model.parameters():
-        param.requires_grad = True
+    # Enable gradients ONLY on DenseNet (needed for GradCAM++) — only if PyTorch model
+    if _model_types.get("DenseNet121") == "pytorch":
+        for param in densenet_model.parameters():
+            param.requires_grad = True
 
     startup_time = round(time.time() - t0, 1)
     models_ready = True
@@ -422,6 +476,14 @@ async def get_random_image():
 
 def _sync_run_inference(image_bytes: bytes, filename: str) -> dict:
     """CPU-heavy inference logic. Runs in a separate thread to avoid blocking the event loop."""
+
+    # ─── CACHE CHECK: skip inference if we've seen this exact image before ───
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
+    if image_hash in prediction_cache:
+        cached = prediction_cache[image_hash].copy()
+        cached["cache_hit"] = True
+        return cached
+
     try:
         img_rgb = validate_radiograph_modality(image_bytes)
     except HTTPException:
@@ -435,17 +497,9 @@ def _sync_run_inference(image_bytes: bytes, filename: str) -> dict:
     # Run models sequentially. Parallel `ThreadPoolExecutor` combined with PyTorch's internal OpenMP threading
     # leads to massive thread thrashing on CPUs (e.g., 3 * 32 active threads), causing massive latency spikes.
     with torch.inference_mode():
-        # First Pass — DenseNet121
-        out_dense = densenet_model(input_tensor)
-        p_dense = F.softmax(out_dense, dim=1).cpu().numpy()
-
-        # Second Pass — ConvNeXtV2
-        out_conv = convnext_model(input_tensor)
-        p_conv = F.softmax(out_conv, dim=1).cpu().numpy()
-
-        # Third Pass — MaxViT
-        out_max = maxvit_model(input_tensor)
-        p_max = F.softmax(out_max, dim=1).cpu().numpy()
+        p_dense = _run_model(densenet_model, input_tensor, "DenseNet121")
+        p_conv = _run_model(convnext_model, input_tensor, "ConvNeXtV2")
+        p_max = _run_model(maxvit_model, input_tensor, "MaxViT")
 
     # Meta-learner stacking ensemble (proper calibrated logistic regression)
     x_meta = np.concatenate([p_dense, p_conv, p_max], axis=1)  # shape (1, 9)
@@ -484,7 +538,7 @@ def _sync_run_inference(image_bytes: bytes, filename: str) -> dict:
             # Case insensitive exact string matching
             is_correct = ground_truth.lower() == prediction_class.lower()
 
-    return {
+    result = {
         "prediction": prediction_class,
         "confidence_score": confidence_score,
         "class_probabilities": class_probabilities,
@@ -493,6 +547,11 @@ def _sync_run_inference(image_bytes: bytes, filename: str) -> dict:
         "is_correct": is_correct,
         "inference_time_seconds": inference_time_seconds,
     }
+
+    # ─── CACHE STORE ───
+    prediction_cache[image_hash] = result
+
+    return result
 
 
 @app.post("/predict")

@@ -1,5 +1,5 @@
 # ─── CDSS Backend Docker Image ───
-# Optimized for Azure App Service (Linux, CPU-only)
+# Optimized for Azure App Service (Linux B3: 4 vCPU, 7 GB RAM, CPU-only)
 
 FROM python:3.11-slim
 
@@ -31,5 +31,10 @@ RUN mkdir -p Models/densenet121 Models/convnext_v2_base Models/maxvit_base Datas
 # Expose the API port
 EXPOSE 8000
 
-# Start: download assets from Blob Storage, then launch Uvicorn
-CMD ["sh", "-c", "python startup.py && uvicorn api:app --host 0.0.0.0 --port 8000"]
+# Start: download assets from Blob Storage, then launch Gunicorn with Uvicorn workers
+# --preload: loads the app (inc. ~6GB PyTorch models) in the master process ONCE,
+#            workers inherit via copy-on-write memory (critical for 7GB RAM limit).
+# --workers 3: utilize 3 of 4 available cores (1 reserved for master + OS).
+# --timeout 120: inference can take up to 60s; 2x headroom prevents premature kills.
+CMD ["sh", "-c", "python startup.py && gunicorn api:app --workers 3 --worker-class uvicorn.workers.UvicornWorker --preload --timeout 120 --bind 0.0.0.0:8000"]
+
