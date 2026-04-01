@@ -12,7 +12,7 @@ WORKDIR /app
 # Install system dependencies required by Pillow, scipy, matplotlib, and OpenCV
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ libjpeg-dev zlib1g-dev libffi-dev \
-    libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libxcb1 \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev libxcb1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies (cached layer — only re-runs if requirements.txt changes)
