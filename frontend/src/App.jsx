@@ -393,6 +393,9 @@ export default function App() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [, setFsMousePos] = useState({ x: 0, y: 0, pct: { x: 50, y: 50 }, show: false });
 
+  // Inference queue position (polled from backend during inference)
+  const [queuePosition, setQueuePosition] = useState(0);
+
   // Backend readiness
   const [modelsReady, setModelsReady] = useState(false);
   const [modelLoadMsg, setModelLoadMsg] = useState('Connecting to AI backend...');
@@ -777,6 +780,7 @@ export default function App() {
 
       // Step 3 (Long poll)
       setStatus('inference');
+      setQueuePosition(0);
 
       const response = await axios.post(`${API_BASE}/predict`, formData, {
         headers: {
@@ -810,6 +814,8 @@ export default function App() {
       console.error(err);
       setStatus('error');
       setErrorMsg(err.response?.data?.detail || err.message || "Unknown error occurred.");
+    } finally {
+      setQueuePosition(0);
     }
   }, [file, modelConfig, patientData]);
 
@@ -1173,6 +1179,21 @@ export default function App() {
     }
   };
 
+  // ── Queue position polling during inference ──
+  useEffect(() => {
+    if (status !== 'inference') return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/predict/queue`);
+        if (!cancelled) setQueuePosition(res.data.waiting || 0);
+      } catch { /* ignore */ }
+    };
+    poll();
+    const timer = setInterval(poll, 2000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [status]);
+
   const ActiveStepLog = ({ status }) => {
     let text = "";
     let Icon = Activity;
@@ -1183,28 +1204,57 @@ export default function App() {
     else if (status === 'synthesizing') { text = "4. 🧬 Synthesizing Extracted Features..."; Icon = ChevronRight; }
 
     return (
-      <motion.div
-        key={status}
-        initial={{ opacity: 0, x: -20, scale: 0.95 }}
-        animate={{ opacity: 1, x: 0, scale: 1 }}
-        exit={{ opacity: 0, x: 20, scale: 0.95 }}
-        transition={{ duration: 0.3, type: "spring" }}
-        className={`flex items-center space-x-3 py-1.5 px-3 rounded-xl shadow-md relative overflow-hidden group border w-full max-w-xl
-          ${theme === 'dark' ? 'bg-gradient-to-r from-[#00D4FF]/20 to-[#FF0080]/10 border-[#00D4FF]/50 shadow-[0_0_15px_rgba(0,212,255,0.1)]' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-400 shadow-blue-100'} cursor-default`}
-      >
-        {/* CSS-only Shimmer background — no JS animation */}
-        <div className="shimmer-fast-bg" />
+      <>
+        {/* Queue position banner — shown when server is busy */}
+        {status === 'inference' && queuePosition > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3, type: 'spring' }}
+            className={`flex items-center gap-3 py-2 px-4 rounded-xl border w-full max-w-xl mb-2
+              ${theme === 'dark'
+                ? 'bg-gradient-to-r from-amber-500/15 to-orange-500/10 border-amber-400/40 shadow-[0_0_12px_rgba(245,158,11,0.12)]'
+                : 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-300 shadow-amber-100'}`}
+          >
+            <div className={`text-2xl font-black tabular-nums min-w-[32px] text-center ${theme === 'dark' ? 'text-amber-400' : 'text-amber-600'}`}>
+              {queuePosition}
+            </div>
+            <div className="flex-1">
+              <p className={`text-[11px] font-bold tracking-wide ${theme === 'dark' ? 'text-amber-300' : 'text-amber-700'}`}>
+                ⏳ Queue Position: {queuePosition}
+              </p>
+              <p className={`text-[9px] font-medium ${theme === 'dark' ? 'text-amber-400/60' : 'text-amber-600/70'}`}>
+                Your scan is queued — server is processing other requests
+              </p>
+            </div>
+            <div className={`w-4 h-4 rounded-full border-2 border-transparent ${theme === 'dark' ? 'border-t-amber-400 border-r-amber-400' : 'border-t-amber-600 border-r-amber-600'} animate-spin`} />
+          </motion.div>
+        )}
 
-        <div className={`p-1.5 rounded-lg shadow-inner relative z-10 animate-pulse ${theme === 'dark' ? 'bg-[#00D4FF] text-white shadow-[0_0_10px_#00D4FF]' : 'bg-blue-600 text-white shadow-[0_0_8px_rgba(37,99,235,0.5)]'}`}>
-          <Icon size={16} strokeWidth={2.5} />
-        </div>
-        <div className="flex-1 relative z-10">
-          <p className={`text-xs font-bold tracking-wide ${theme === 'dark' ? 'text-white' : 'text-blue-900'}`}>
-            {text}
-          </p>
-        </div>
-        <div className={`w-5 h-5 flex-shrink-0 rounded-full border-[3px] border-transparent ${theme === 'dark' ? 'border-t-[#00D4FF] border-r-[#00D4FF]' : 'border-t-blue-600 border-r-blue-600'} animate-spin`} style={{ transformOrigin: 'center' }} />
-      </motion.div>
+        <motion.div
+          key={status}
+          initial={{ opacity: 0, x: -20, scale: 0.95 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          exit={{ opacity: 0, x: 20, scale: 0.95 }}
+          transition={{ duration: 0.3, type: "spring" }}
+          className={`flex items-center space-x-3 py-1.5 px-3 rounded-xl shadow-md relative overflow-hidden group border w-full max-w-xl
+            ${theme === 'dark' ? 'bg-gradient-to-r from-[#00D4FF]/20 to-[#FF0080]/10 border-[#00D4FF]/50 shadow-[0_0_15px_rgba(0,212,255,0.1)]' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-400 shadow-blue-100'} cursor-default`}
+        >
+          {/* CSS-only Shimmer background — no JS animation */}
+          <div className="shimmer-fast-bg" />
+
+          <div className={`p-1.5 rounded-lg shadow-inner relative z-10 animate-pulse ${theme === 'dark' ? 'bg-[#00D4FF] text-white shadow-[0_0_10px_#00D4FF]' : 'bg-blue-600 text-white shadow-[0_0_8px_rgba(37,99,235,0.5)]'}`}>
+            <Icon size={16} strokeWidth={2.5} />
+          </div>
+          <div className="flex-1 relative z-10">
+            <p className={`text-xs font-bold tracking-wide ${theme === 'dark' ? 'text-white' : 'text-blue-900'}`}>
+              {text}
+            </p>
+          </div>
+          <div className={`w-5 h-5 flex-shrink-0 rounded-full border-[3px] border-transparent ${theme === 'dark' ? 'border-t-[#00D4FF] border-r-[#00D4FF]' : 'border-t-blue-600 border-r-blue-600'} animate-spin`} style={{ transformOrigin: 'center' }} />
+        </motion.div>
+      </>
     );
   };
 

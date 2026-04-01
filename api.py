@@ -102,6 +102,15 @@ app = FastAPI(title="CDSS API")
 models_ready = False
 startup_time = None
 
+# ─── CONCURRENCY LIMITER ───
+# Restricts heavy PyTorch inference to N simultaneous requests max.
+# Prevents OOM on Azure B3 (4 vCPU, 7 GB RAM) under concurrent load.
+# Override via MAX_CONCURRENT_INFERENCES env var for more powerful machines.
+MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENT_INFERENCES", "3"))
+inference_semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+_inference_active = 0   # currently running inferences
+_inference_waiting = 0  # queued requests waiting for a semaphore slot
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -495,8 +504,16 @@ def _sync_run_inference(image_bytes: bytes, filename: str) -> dict:
     }
 
 
+@app.get("/predict/queue")
+async def predict_queue_status():
+    """Returns current inference queue depth so frontend can show position."""
+    return {"active": _inference_active, "waiting": _inference_waiting}
+
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
+    global _inference_active, _inference_waiting
+
     # Guard: reject requests if models aren't loaded yet
     if not models_ready:
         raise HTTPException(
@@ -507,9 +524,19 @@ async def predict(file: UploadFile = File(...)):
     image_bytes = await file.read()
     filename = file.filename
 
-    # Offload CPU-heavy inference to a threadpool so the asyncio event loop
-    # remains free to handle concurrent requests (e.g., /health checks).
-    return await asyncio.to_thread(_sync_run_inference, image_bytes, filename)
+    # Track queue position for frontend polling
+    _inference_waiting += 1
+    try:
+        async with inference_semaphore:
+            _inference_waiting -= 1
+            _inference_active += 1
+            try:
+                return await asyncio.to_thread(_sync_run_inference, image_bytes, filename)
+            finally:
+                _inference_active -= 1
+    except Exception:
+        _inference_waiting = max(0, _inference_waiting - 1)
+        raise
 
 
 class ReportRequest(BaseModel):
