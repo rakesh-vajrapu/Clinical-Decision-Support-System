@@ -101,10 +101,18 @@ CDSS is an **AI-powered Clinical Decision Support System** that performs automat
 Clinical-Decision-Support-System/
 │
 ├── api.py                        # FastAPI backend — all endpoints & ML inference
+├── startup.py                    # Azure Blob Storage download script (models + dataset)
 ├── requirements.txt              # Python dependencies
+├── Dockerfile                    # Backend Docker image definition
+├── .dockerignore                 # Docker build exclusions
+├── .gitignore                    # Git exclusions (secrets, Models/, Dataset/)
 ├── .env.example                  # Environment variable template
 │
-├── Models/
+├── .github/
+│   └── workflows/
+│       └── azure-deploy.yml      # CI/CD: auto build + deploy on push to main
+│
+├── Models/                       # ⚠️ NOT in Git — stored in Azure Blob Storage
 │   ├── densenet121/
 │   │   └── best_tta.pth          # DenseNet-121 checkpoint (~108 MB)
 │   ├── convnext_v2_base/
@@ -113,9 +121,9 @@ Clinical-Decision-Support-System/
 │   │   └── best_tta.pth          # MaxViT-Base checkpoint (~1.4 GB)
 │   └── meta_learner_logistic.pkl # L2 Logistic Meta-Learner
 │
-├── Dataset/
+├── Dataset/                      # ⚠️ NOT in Git — stored in Azure Blob Storage
 │   ├── data.csv                  # Ground truth labels (path → label mapping)
-│   └── images/                   # Chest X-ray images (PNG/JPG)
+│   └── images/                   # Chest X-ray images (~20,805 PNG/JPG)
 │
 ├── Assets/
 │   ├── Architecture.png              # System architecture diagram
@@ -303,14 +311,92 @@ Navigate to **http://localhost:8501** — the CDSS UI will appear. Wait for the 
 
 ---
 
+## ☁️ Cloud Deployment Architecture
+
+CDSS uses a split deployment model for cost-efficiency and performance:
+
+| Component | Platform | Details |
+|-----------|----------|---------|
+| **Frontend** | [Vercel](https://vercel.com) | Auto-deploys from GitHub, React + Vite build |
+| **Backend** | [Azure App Service](https://azure.microsoft.com/services/app-service/) | Docker container (Python 3.11-slim) with B3 plan (4 vCPU, 7 GB RAM) |
+| **Models & Dataset** | [Azure Blob Storage](https://azure.microsoft.com/services/storage/blobs/) | ~2.8 GB model checkpoints + ~20K X-ray images in `cdss-assets` container |
+| **AI Services** | Azure OpenAI (GPT-4o-mini) + Azure AI Search | Dual-tier RAG report generation and AI chatbot |
+
+> **No Git LFS required.** Large files (Models/ and Dataset/) are stored in Azure Blob Storage and downloaded automatically at container startup via `startup.py`.
+
+### Live URLs
+| Service | URL |
+|---------|-----|
+| Frontend (Vercel) | [https://cxr-cdss.vercel.app](https://cxr-cdss.vercel.app) |
+| Backend (Azure) | `https://cdss-backend.azurewebsites.net` |
+
+---
+
+## 🔄 CI/CD Pipeline
+
+The project uses **GitHub Actions** for fully automated deployment. Every push to `main` triggers:
+
+```
+push to main → Checkout → Docker Build (tagged with commit SHA) → Push to ACR → Deploy to Azure App Service
+```
+
+**Workflow file:** [`.github/workflows/azure-deploy.yml`](.github/workflows/azure-deploy.yml)
+
+### Required GitHub Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `ACR_USERNAME` | Azure Container Registry admin username |
+| `ACR_PASSWORD` | Azure Container Registry admin password |
+| `AZURE_WEBAPP_PUBLISH_PROFILE` | Download from Azure Portal → App Service → "Download publish profile" |
+
+### Docker Image
+- **Base:** `python:3.11-slim`
+- **Registry:** `cdssregistryrakesh.azurecr.io/cdss-backend`
+- **Tag strategy:** Commit SHA (`${{ github.sha }}`) — prevents Azure from caching stale images
+- **Startup flow:** `startup.py` (downloads assets from Blob) → `uvicorn api:app --host 0.0.0.0 --port 8000`
+
+---
+
+## 📦 Azure Blob Storage Setup
+
+The `Models/` (~2.8 GB) and `Dataset/` (~20K images) folders are stored in Azure Blob Storage to avoid Git LFS costs.
+
+| Storage Account | Container | Contents |
+|----------------|-----------|----------|
+| `cdssstoragehub` | `cdss-assets` | 4 model files + `data.csv` + ~20,805 X-ray images |
+
+### Blob Path Structure
+```
+cdss-assets/
+├── Models/
+│   ├── densenet121/best_tta.pth
+│   ├── convnext_v2_base/best_tta.pth
+│   ├── maxvit_base/best_tta.pth
+│   └── meta_learner_logistic.pkl
+└── Dataset/
+    ├── data.csv
+    └── images/   (20,805 files)
+```
+
+### Required Environment Variable
+```env
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net
+AZURE_BLOB_CONTAINER_NAME=cdss-assets
+```
+
+---
+
 ### 🔧 Troubleshooting
 
 | Issue | Solution |
 |-------|---------|
 | **`pip install` fails on PyTorch** | Ensure Python 3.11+. Try `pip install --upgrade pip setuptools wheel` first |
 | **PowerShell blocks `.ps1` activation** | Run `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` |
-| **Backend starts but inference returns 503** | Models are still loading (~60s). Wait for `[STARTUP] All models ready` in the terminal |
-| **CORS errors in browser console** | Ensure `ALLOWED_ORIGINS` in `.env` includes your frontend URL (e.g., `http://localhost:8501`) |
+| **Backend starts but inference returns 503** | Models are still loading (~60s on local, ~3-5 min on first Azure boot). Wait for `[STARTUP] All models ready` in logs |
+| **CORS errors in browser console** | Ensure `ALLOWED_ORIGINS` in `.env` includes your frontend URL (e.g., `https://cxr-cdss.vercel.app`) |
+| **`libxcb.so.1` import error in Docker** | Ensure `opencv-python-headless` is in `requirements.txt` (not `opencv-python`) |
+| **Azure App Service shows old image** | Images are tagged with commit SHA to prevent caching. Check ACR for latest tag |
 
 ---
 
