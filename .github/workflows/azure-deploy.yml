@@ -3,10 +3,6 @@ name: Deploy Backend to Azure
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'frontend/**'
-      - 'README.md'
-      - 'Assets/**'
 
 jobs:
   build-and-deploy:
