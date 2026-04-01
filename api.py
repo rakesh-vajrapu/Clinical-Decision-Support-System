@@ -64,12 +64,9 @@ AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "cdss-gpt-4o-mini-model")
 
 # CORS: Read allowed origins from .env (comma-separated)
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:8501").split(",")
-    if origin.strip()
-]
-print(f"[CORS] Allowed origins: {ALLOWED_ORIGINS}")
+raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+print(f"[CORS] Allowed origins: {origins}")
 
 # ─── GROUND TRUTH DATABASE ───
 try:
@@ -106,7 +103,7 @@ startup_time = None
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
