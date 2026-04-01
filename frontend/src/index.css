@@ -822,6 +822,19 @@ img {
 }
 
 /* ════════════════════════════════════════════════
+   REPORT SUBHEADING SPACING — 1-1.5 line gap
+   above bold section headings like **Your Results**
+════════════════════════════════════════════════ */
+.prose p:has(> strong:first-child) {
+  margin-top: 1.25em;
+}
+
+.prose p:has(> strong:first-child) > strong:first-child {
+  display: inline-block;
+  margin-bottom: 0.15em;
+}
+
+/* ════════════════════════════════════════════════
    CARD HOVER LIFT — Premium spring physics
 ════════════════════════════════════════════════ */
 .card-hover {

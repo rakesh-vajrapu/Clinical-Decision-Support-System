@@ -5,6 +5,7 @@ import re
 import time
 import base64
 import random
+import asyncio
 import warnings
 import contextlib
 import multiprocessing
@@ -419,18 +420,8 @@ async def get_random_image():
     )
 
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    # Guard: reject requests if models aren't loaded yet
-    if not models_ready:
-        raise HTTPException(
-            status_code=503,
-            detail="Models are still loading. Please wait and try again in a few seconds.",
-        )
-
-    image_bytes = await file.read()
-    filename = file.filename
-
+def _sync_run_inference(image_bytes: bytes, filename: str) -> dict:
+    """CPU-heavy inference logic. Runs in a separate thread to avoid blocking the event loop."""
     try:
         img_rgb = validate_radiograph_modality(image_bytes)
     except HTTPException:
@@ -502,6 +493,23 @@ async def predict(file: UploadFile = File(...)):
         "is_correct": is_correct,
         "inference_time_seconds": inference_time_seconds,
     }
+
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    # Guard: reject requests if models aren't loaded yet
+    if not models_ready:
+        raise HTTPException(
+            status_code=503,
+            detail="Models are still loading. Please wait and try again in a few seconds.",
+        )
+
+    image_bytes = await file.read()
+    filename = file.filename
+
+    # Offload CPU-heavy inference to a threadpool so the asyncio event loop
+    # remains free to handle concurrent requests (e.g., /health checks).
+    return await asyncio.to_thread(_sync_run_inference, image_bytes, filename)
 
 
 class ReportRequest(BaseModel):
