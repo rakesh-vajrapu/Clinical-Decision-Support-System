@@ -2931,8 +2931,8 @@ export default function App() {
                             // Shift+Enter will naturally insert a newline in a textarea
                           }}
                           placeholder="Type a message..."
-                          className={`peer flex-1 min-w-0 text-[15px] tracking-[0.02em] px-6 py-4 bg-transparent outline-none ring-0 focus:ring-0 focus:outline-none border-0 transition-all duration-300 relative z-10 resize-none overflow-y-auto custom-scrollbar leading-relaxed ${theme === 'dark' ? 'text-white placeholder-gray-500 font-medium' : 'text-gray-900 placeholder-gray-400 font-medium'}`}
-                          style={{ minHeight: '56px', maxHeight: '120px' }}
+                          className={`peer flex-1 min-w-0 text-[15px] tracking-[0.02em] px-6 py-4 bg-transparent outline-none ring-0 focus:ring-0 focus:outline-none border-none !border-none transition-all duration-300 relative z-10 resize-none overflow-y-hidden leading-relaxed ${theme === 'dark' ? 'text-white placeholder-gray-500 font-medium' : 'text-gray-900 placeholder-gray-400 font-medium'}`}
+                          style={{ minHeight: '56px', maxHeight: '120px', border: 'none', boxShadow: 'none', outline: 'none' }}
                           disabled={isChatting}
                           rows={1}
                         />
