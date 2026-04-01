@@ -1,7 +1,6 @@
 # ─── CDSS Backend Dependencies ───
 fastapi>=0.133.0
 uvicorn[standard]>=0.30.0
-gunicorn>=23.0.0
 python-multipart>=0.0.22
 
 # ML / Deep Learning
@@ -10,7 +9,6 @@ torchvision>=0.25.0
 timm>=1.0.25
 opencv-python-headless>=4.11.0
 grad-cam>=1.5.5
-onnxruntime>=1.22.0
 
 # Data & Image Processing
 numpy>=2.4.0
@@ -29,4 +27,3 @@ pydantic>=2.12.0
 
 # Azure Blob Storage (download Models & Dataset at startup)
 azure-storage-blob>=12.25.0
-
