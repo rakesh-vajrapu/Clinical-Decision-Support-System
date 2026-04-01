@@ -248,66 +248,209 @@ Before inference, every uploaded image passes through a multi-gate validation sy
 ## 🚀 Local Run Instructions
 
 ### Prerequisites
-- **Python 3.11+** — [Download](https://www.python.org/downloads/)
-- **Node.js 18+** and **npm** — [Download](https://nodejs.org/)
 
-### 1. Create a Virtual Environment & Install Backend Dependencies
+| Requirement | Minimum Version | Download |
+|-------------|:-:|----------|
+| **Python** | 3.11+ | [python.org/downloads](https://www.python.org/downloads/) |
+| **Node.js** | 18+ | [nodejs.org](https://nodejs.org/) |
+| **npm** | 9+ | Bundled with Node.js |
+| **Git** | Any | [git-scm.com](https://git-scm.com/) |
+
+---
+
+### Step 1 — Clone the Repository
+
 ```bash
-# Create a virtual environment
-python -m venv .venv
+git clone https://github.com/rakesh-vajrapu/Clinical-Decision-Support-System.git
+cd Clinical-Decision-Support-System
+```
 
-# Activate the virtual environment
-# ── Windows (Command Prompt) ──
-.venv\Scripts\activate
+> **💡 Tip:** The `Models/` (~2.8 GB) and `Dataset/` (~20K images) folders are **NOT** in Git — they're stored in Azure Blob Storage and downloaded automatically when the backend first starts. No Git LFS is needed.
+
+---
+
+### Step 2 — Create a Python Virtual Environment
+
+```bash
+# Create an isolated Python environment (avoids polluting your global packages)
+python -m venv .venv
+```
+
+Activate it (**choose your OS/shell**):
+
+```bash
 # ── Windows (PowerShell) ──
 .venv\Scripts\Activate.ps1
+
+# ── Windows (Command Prompt) ──
+.venv\Scripts\activate
+
 # ── macOS / Linux ──
 source .venv/bin/activate
+```
 
-# Install all Python dependencies
+You should see `(.venv)` appear in your terminal prompt — this confirms the virtual environment is active.
+
+> **⚠️ PowerShell Users:** If you see a "running scripts is disabled" error, run this once:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+> ```
+> This allows PowerShell to execute the activation script. It's a one-time setting.
+
+---
+
+### Step 3 — Install Backend Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment Variables
-Create a `.env` file in the **project root** (or edit the existing `.env.example`):
-```env
-FOUNDRY_API_KEY=your_azure_api_key
-FOUNDRY_ENDPOINT=https://your-resource.services.ai.azure.com/api/projects/your-project
-AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com
-AZURE_OPENAI_DEPLOYMENT=cdss-gpt-4o-mini-model
-SEARCH_ENDPOINT=https://your-search-service.search.windows.net
-SEARCH_API_KEY=your_search_api_key
-SEARCH_INDEX_NAME=cdss-index
-ALLOWED_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
+This installs **~30 packages** including PyTorch (~2 GB download), FastAPI, timm, grad-cam, and Azure SDKs. The first install may take 5–10 minutes depending on your internet speed.
+
+> **💡 Tip:** If `pip install` fails on PyTorch, try upgrading pip first:
+> ```bash
+> pip install --upgrade pip setuptools wheel
+> ```
+
+---
+
+### Step 4 — Configure Environment Variables
+
+Copy the example file and fill in your Azure credentials:
+
+```bash
+# ── macOS / Linux ──
+cp .env.example .env
+
+# ── Windows (PowerShell) ──
+Copy-Item .env.example .env
 ```
 
-> **Note**: `FOUNDRY_API_KEY`, `FOUNDRY_ENDPOINT`, `AZURE_OPENAI_ENDPOINT`, and `AZURE_OPENAI_DEPLOYMENT` are required for AI report generation and the chatbot. Without them, classification and GradCAM++ heatmaps still work, but reports and chat will return errors. The `SEARCH_*` variables are optional and enable RAG-grounded report generation via Azure AI Search.
+Then edit `.env` and add your credentials:
 
-### 3. Start the Backend
+```env
+# Azure AI Foundry — used for report generation & chatbot
+FOUNDRY_API_KEY=your_azure_api_key_here
+FOUNDRY_ENDPOINT=https://your-resource-hub.services.ai.azure.com/api/projects/your-project
+
+# Azure OpenAI Cognitive Services — the LLM endpoint
+AZURE_OPENAI_ENDPOINT=https://your-resource-hub.cognitiveservices.azure.com
+AZURE_OPENAI_DEPLOYMENT=cdss-gpt-4o-mini-model
+
+# CORS — comma-separated list of allowed frontend origins
+ALLOWED_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
+
+# Azure AI Search — enables RAG-grounded clinical reports (optional)
+SEARCH_ENDPOINT=https://your-search-service.search.windows.net
+SEARCH_API_KEY=your_search_api_key_here
+SEARCH_INDEX_NAME=cdss-index
+
+# Azure Blob Storage — downloads model checkpoints & dataset on first boot
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net
+AZURE_BLOB_CONTAINER_NAME=cdss-assets
+```
+
+> **💡 What works without Azure keys?**
+> - ✅ Image upload, validation, 3-model inference, GradCAM++ heatmaps — **work fully offline** once models are downloaded
+> - ❌ Report generation, chatbot — require `FOUNDRY_*` and `AZURE_OPENAI_*` keys
+> - ❌ Model download on first boot — requires `AZURE_STORAGE_CONNECTION_STRING`
+
+---
+
+### Step 5 — Start the Backend Server
+
 ```bash
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
-> ⏳ Models are loaded in a **background thread** — the server responds to health checks immediately, but inference will be unavailable for ~60 seconds while the 3 models (~2.8 GB total) finish loading.
 
-### 4. Frontend Setup (New Terminal)
-Open a **new terminal window** (keep the backend running in the first one):
+| Flag | What it does |
+|------|-------------|
+| `api:app` | Loads the `app` FastAPI instance from `api.py` |
+| `--host 0.0.0.0` | Listens on all network interfaces (required for Docker / remote access) |
+| `--port 8000` | Serves the API on port 8000 |
+
+**What happens on startup:**
+1. `startup.py` downloads model checkpoints (~2.8 GB) from Azure Blob Storage (skipped if files already exist)
+2. Models load in a **background thread** — the server starts accepting HTTP requests immediately
+3. Wait for `[STARTUP] All models ready` in the terminal (~60s first time, ~5s after caching)
+
+> **⏳ Important:** The frontend will show a "Models Loading" banner until all 3 models are ready. You can upload images, but inference won't work until loading completes.
+
+---
+
+### Step 6 — Frontend Setup (New Terminal)
+
+Open a **second terminal window** (keep the backend running in the first one):
+
 ```bash
 cd frontend
-npm install
+npm install --legacy-peer-deps
 ```
+
+| Flag | What it does |
+|------|-------------|
+| `--legacy-peer-deps` | Resolves ESLint peer dependency conflicts between React 19 and some plugins |
+
+> **💡 Tip:** If `npm install` fails without `--legacy-peer-deps`, it's because `eslint-plugin-react` hasn't updated its peer dependency range for ESLint 10. The `--legacy-peer-deps` flag safely skips this check.
 
 Create a `.env` file inside the `frontend/` folder:
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-### 5. Start the Frontend
+This tells the frontend where to find the backend API. If you deploy the backend elsewhere, change this URL accordingly.
+
+---
+
+### Step 7 — Start the Frontend Dev Server
+
 ```bash
 npm run dev
 ```
 
-### 6. Open in Browser
-Navigate to **http://localhost:8501** — the CDSS UI will appear. Wait for the model loading banner to disappear before uploading X-rays.
+This starts the **Vite 8** development server with Hot Module Replacement (HMR) — any code changes you make to the frontend will instantly reflect in the browser without a full page reload.
+
+---
+
+### Step 8 — Open in Browser
+
+Navigate to **http://localhost:8501**
+
+The CDSS interface will appear. Once the model loading banner disappears:
+1. Click **"Deploy Random Validation"** to load a random X-ray from the dataset
+2. Click **"Execute Diagnostic AI"** to run the 3-model ensemble inference
+3. View the diagnosis, confidence score, GradCAM++ heatmap, and probability distribution
+4. Generate **Radiologist** or **Patient** reports via the Reports panel
+5. Chat with the **AI Assistant** for follow-up medical questions
+
+---
+
+### 🎯 Quick-Start Summary
+
+```bash
+# 1. Clone
+git clone https://github.com/rakesh-vajrapu/Clinical-Decision-Support-System.git
+cd Clinical-Decision-Support-System
+
+# 2. Backend setup
+python -m venv .venv
+.venv\Scripts\Activate.ps1        # Windows PowerShell
+pip install -r requirements.txt
+cp .env.example .env              # Then edit .env with your Azure keys
+
+# 3. Start backend (Terminal 1)
+uvicorn api:app --host 0.0.0.0 --port 8000
+
+# 4. Frontend setup (Terminal 2)
+cd frontend
+npm install --legacy-peer-deps
+echo VITE_API_BASE_URL=http://127.0.0.1:8000 > .env
+
+# 5. Start frontend
+npm run dev
+
+# 6. Open http://localhost:8501
+```
 
 ---
 
