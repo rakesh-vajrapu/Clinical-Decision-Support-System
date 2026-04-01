@@ -1,0 +1,24 @@
+# ─── Secrets ───
+.env
+
+# ─── Large files (stored in Azure Blob Storage) ───
+Models/
+Dataset/
+
+# ─── Python ───
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ─── Node.js ───
+node_modules/
+
+# ─── IDE ───
+.vscode/
+.idea/
+
+# ─── OS ───
+.DS_Store
+Thumbs.db

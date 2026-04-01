@@ -1,0 +1,22 @@
+# Large files (downloaded from Azure Blob at runtime)
+Models/
+Dataset/
+Assets/
+
+# Frontend (deployed separately on Vercel)
+frontend/
+
+# Python virtual env
+.venv/
+venv/
+__pycache__/
+
+# Git
+.git/
+.gitignore
+
+# Environment secrets (injected via Azure App Settings)
+.env
+
+# Docs
+README.md
