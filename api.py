@@ -463,11 +463,6 @@ async def predict(file: UploadFile = File(...)):
     x_meta = np.concatenate([p_dense, p_conv, p_max], axis=1)  # shape (1, 9)
     p_final = meta_learner.predict_proba(x_meta)[0]  # shape (3,)
 
-    print(
-        f"[DEBUG] dense={p_dense[0].round(3)} conv={p_conv[0].round(3)} max={p_max[0].round(3)}"
-    )
-    print(f"[DEBUG] meta={p_final.round(3)} pred={classes[int(np.argmax(p_final))]}")
-
     pred_idx = int(np.argmax(p_final))
     prediction_class = classes[pred_idx]
     confidence_score = float(p_final[pred_idx])
