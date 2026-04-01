@@ -31,5 +31,8 @@ RUN mkdir -p Models/densenet121 Models/convnext_v2_base Models/maxvit_base Datas
 # Expose the API port
 EXPOSE 8000
 
-# Start: download assets from Blob Storage, then launch Uvicorn
-CMD ["sh", "-c", "python startup.py && uvicorn api:app --host 0.0.0.0 --port 8000"]
+# Start: download assets from Blob Storage, then launch Gunicorn with Uvicorn workers.
+# --preload: loads models ONCE in the master process, shared across workers via fork (critical for 7GB RAM limit).
+# --workers 3: utilizes multiple CPU cores for concurrent request handling.
+# --timeout 120: allows up to 120s for heavy inference requests before worker is killed.
+CMD ["sh", "-c", "python startup.py && gunicorn api:app --workers 3 --worker-class uvicorn.workers.UvicornWorker --preload --timeout 120 --bind 0.0.0.0:8000"]
