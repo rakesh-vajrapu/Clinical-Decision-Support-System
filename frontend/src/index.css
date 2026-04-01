@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@plugin "@tailwindcss/typography";
 
 /* ════════════════════════════════════════════════
    DESIGN TOKENS
@@ -800,7 +801,12 @@ img {
 /* ════════════════════════════════════════════════
    CHATBOT MARKDOWN PROSE OVERRIDES
 ════════════════════════════════════════════════ */
-.prose-bold-override strong,
+.prose-bold-override strong {
+  font-weight: 900 !important;
+  color: var(--c-cyan) !important;
+  letter-spacing: 0.025em;
+}
+
 .prose-bold-override h1,
 .prose-bold-override h2,
 .prose-bold-override h3,
@@ -808,30 +814,67 @@ img {
   font-weight: 900 !important;
   color: var(--c-cyan) !important;
   letter-spacing: 0.025em;
-  margin-top: 0.75rem;
-  margin-bottom: 0.25rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.15rem;
+}
+
+.prose-bold-override p {
+  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
+}
+
+/* Kill top margin on first element and bottom on last — eliminates gaps inside chat bubbles */
+.prose-bold-override> :first-child {
+  margin-top: 0 !important;
+}
+
+.prose-bold-override> :last-child {
+  margin-bottom: 0 !important;
 }
 
 .prose-bold-override ul {
   list-style-type: disc;
   padding-left: 1.25rem;
-}
-
-.prose-bold-override li {
+  margin-top: 0.25rem;
   margin-bottom: 0.25rem;
 }
 
-/* ════════════════════════════════════════════════
-   REPORT SUBHEADING SPACING — 1-1.5 line gap
-   above bold section headings like **Your Results**
-════════════════════════════════════════════════ */
-.prose p:has(> strong:first-child) {
-  margin-top: 1.25em;
+.prose-bold-override ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
 }
 
-.prose p:has(> strong:first-child) > strong:first-child {
+.prose-bold-override li {
+  margin-bottom: 0.15rem;
+}
+
+.prose-bold-override li>p {
+  margin: 0;
+}
+
+/* ════════════════════════════════════════════════
+   REPORT PROSE OVERRIDES — Tighter spacing
+════════════════════════════════════════════════ */
+
+/* Kill top/bottom gaps inside report containers */
+.prose> :first-child {
+  margin-top: 0 !important;
+}
+
+.prose> :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Subtle gap above bold section headings like **Your Results** */
+.prose p:has(> strong:first-child) {
+  margin-top: 0.6em;
+}
+
+.prose p:has(> strong:first-child)>strong:first-child {
   display: inline-block;
-  margin-bottom: 0.15em;
+  margin-bottom: 0.1em;
 }
 
 /* ════════════════════════════════════════════════

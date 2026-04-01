@@ -563,7 +563,10 @@ Write a formal medical findings report using standard clinical terminology suita
 CRITICAL: If the heatmap describes opacities, use standard lexicon like "Focal consolidation".
 {pathology_triggers}
 STRUCTURE: The report MUST follow standard structured radiology syntax with exactly three sections. Use markdown bold headings (e.g., **Clinical Indication**, **Findings**, **Impression**) for each section.
-FORMATTING: Use markdown bold (**text**) for all section headings and important medical terms. Do NOT add excessive blank lines between sections — use a single blank line only.
+FORMATTING RULES:
+1. Use markdown bold (**text**) ONLY for: section headings, percentage values (e.g., **87.31%**), and disease names (e.g., **Pleural Effusion**). Do NOT bold any other medical terms, anatomical terms, or clinical terminology — keep them as regular plain text.
+2. Each section heading MUST be on its own line. The section content MUST start on a NEW line below the heading — never on the same line.
+3. Use a single blank line between sections.
 </RadiologistReport>
 """
     elif request.report_type == "patient":
@@ -574,7 +577,10 @@ Write a soft, empathetic explanation for the patient explaining what the AI foun
 CRITICAL RULES:
 1. DO NOT format this as a letter. Do NOT include greetings like "Dear Patient" or sign-offs like "Warm regards", "Sincerely", or "[Your Name]". Just provide the narrative text directly.
 2. The narrative MUST be structured into exactly three sections with markdown bold headings: **Your Results**, **What This Means**, and **Next Steps for Your Care**.
-FORMATTING: Use markdown bold (**text**) for all section headings and important medical terms. Do NOT add excessive blank lines between sections — use a single blank line only.
+FORMATTING RULES:
+1. Use markdown bold (**text**) ONLY for: section headings, percentage values (e.g., **87.31%**), and disease names (e.g., **Pleural Effusion**). Do NOT bold any other medical terms, anatomical terms, or clinical terminology — keep them as regular plain text.
+2. Each section heading MUST be on its own line. The section content MUST start on a NEW line below the heading — never on the same line.
+3. Use a single blank line between sections.
 </PatientNarrative>
 """
     else:
@@ -586,7 +592,10 @@ Write a formal medical findings report using standard clinical terminology suita
 CRITICAL: If the heatmap describes opacities, use standard lexicon like "Focal consolidation".
 {pathology_triggers}
 STRUCTURE: The report MUST follow standard structured radiology syntax with exactly three sections. Use markdown bold headings (e.g., **Clinical Indication**, **Findings**, **Impression**) for each section.
-FORMATTING: Use markdown bold (**text**) for all section headings and important medical terms. Do NOT add excessive blank lines between sections — use a single blank line only.
+FORMATTING RULES:
+1. Use markdown bold (**text**) ONLY for: section headings, percentage values (e.g., **87.31%**), and disease names (e.g., **Pleural Effusion**). Do NOT bold any other medical terms, anatomical terms, or clinical terminology — keep them as regular plain text.
+2. Each section heading MUST be on its own line. The section content MUST start on a NEW line below the heading — never on the same line.
+3. Use a single blank line between sections.
 </RadiologistReport>
 
 <PatientNarrative>
@@ -594,7 +603,10 @@ Write a soft, empathetic explanation for the patient explaining what the AI foun
 CRITICAL RULES:
 1. DO NOT format this as a letter. Do NOT include greetings like "Dear Patient" or sign-offs like "Warm regards", "Sincerely", or "[Your Name]". Just provide the narrative text directly.
 2. The narrative MUST be structured into exactly three sections with markdown bold headings: **Your Results**, **What This Means**, and **Next Steps for Your Care**.
-FORMATTING: Use markdown bold (**text**) for all section headings and important medical terms. Do NOT add excessive blank lines between sections — use a single blank line only.
+FORMATTING RULES:
+1. Use markdown bold (**text**) ONLY for: section headings, percentage values (e.g., **87.31%**), and disease names (e.g., **Pleural Effusion**). Do NOT bold any other medical terms, anatomical terms, or clinical terminology — keep them as regular plain text.
+2. Each section heading MUST be on its own line. The section content MUST start on a NEW line below the heading — never on the same line.
+3. Use a single blank line between sections.
 </PatientNarrative>
 """
 
@@ -744,7 +756,7 @@ async def chat_with_agent(request: ChatRequest):
                 "FORMATTING RULES:\n"
                 "1. Use very simple, easy-to-understand language. Avoid dense medical jargon unless explaining it simply.\n"
                 "2. ONLY answer exactly what is explicitly asked. Do NOT add extra sections, categories, or tangents the user didn't request.\n"
-                "3. ALWAYS bold disease names and important medical terms using **bold** markdown. For example: **Pneumonia**, **Pleural Effusion**, **Normal**, **Cardiomegaly**.\n"
+                "3. Use markdown bold (**text**) ONLY for: disease names (e.g., **Pneumonia**, **Pleural Effusion**), percentage values, and section headings. Do NOT bold other medical terms or clinical terminology.\n"
                 "4. Keep responses SHORT and focused — aim for 2-4 sentences for simple questions, up to 6-8 sentences for complex ones. Never write essay-length responses.\n"
                 "5. NEVER start a section or heading you cannot finish. If you are running out of space, wrap up gracefully instead of starting new content.\n"
                 "6. Use bullet points sparingly — only for actual lists, not for every response.\n"

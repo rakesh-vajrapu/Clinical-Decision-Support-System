@@ -832,10 +832,40 @@ export default function App() {
 
       const aiText = reportRes.data.response;
 
-      // Match inner content or fallback to full text, strip tags, and strip leading spaces from multiline strings
+      // Match inner content or fallback to full text
       const match = aiText.match(new RegExp(`<${type === 'radiologist' ? 'RadiologistReport' : 'PatientNarrative'}>([\\s\\S]*?)</${type === 'radiologist' ? 'RadiologistReport' : 'PatientNarrative'}>`, 'i'));
       let extractedText = match ? match[1] : aiText;
-      extractedText = extractedText.replace(/<[^>]+>/g, '').trim().replace(/^[ \t]+/gm, '');
+
+      // ── Clean & normalize AI-generated markdown ──
+      extractedText = extractedText
+        .replace(/<[^>]+>/g, '')              // strip any HTML/XML tags
+        .replace(/\[doc\d+\]/gi, '')          // strip Azure RAG citation markers [doc1] etc.
+        .trim()
+        .replace(/\r\n/g, '\n')              // normalize line endings
+        .replace(/^[ \t]+/gm, '');            // strip leading whitespace per line
+
+      // Fix broken bold: collapse single newlines into spaces so **text\nmore** becomes **text more**
+      // (markdown ** cannot span line breaks — they must be on the same line)
+      // Preserve paragraph breaks (double newlines)
+      extractedText = extractedText.replace(/([^\n])\n(?!\n)/g, '$1 ');
+
+      // Re-insert paragraph break after headings that got merged with content
+      // e.g., "**Findings** The chest..." → "**Findings**\n\nThe chest..."
+      extractedText = extractedText.replace(/^(\*\*[^*]+\*\*)\s+(?=[A-Z])/gm, '$1\n\n');
+
+      // Remove empty/collapsed bold markers: "****" or "** **"
+      extractedText = extractedText.replace(/\*\*\s*\*\*/g, '');
+
+      // Ensure balanced ** per paragraph (unbalanced ** causes ALL subsequent ** to show as literal)
+      extractedText = extractedText.split('\n\n').map(para => {
+        const count = (para.match(/\*\*/g) || []).length;
+        if (count % 2 !== 0) {
+          // Remove the last unpaired ** to restore balanced parsing
+          const lastIdx = para.lastIndexOf('**');
+          return para.slice(0, lastIdx) + para.slice(lastIdx + 2);
+        }
+        return para;
+      }).join('\n\n');
 
       setReportsData(prev => ({
         ...prev,
@@ -1045,8 +1075,12 @@ export default function App() {
     doc.setFontSize(11);
 
     const maxLineWidth = 180;
-    // Split text into lines first, preserving markdown bold markers
-    const rawLines = doc.splitTextToSize(text, maxLineWidth);
+
+    // Pre-process: collapse runs of 3+ newlines into exactly 2 (one paragraph break)
+    const cleanedText = text.replace(/\n{3,}/g, '\n\n');
+
+    // Split text into lines, preserving markdown bold markers
+    const rawLines = doc.splitTextToSize(cleanedText, maxLineWidth);
 
     // Render each line, parsing **bold** segments inline
     for (let i = 0; i < rawLines.length; i++) {
@@ -1055,6 +1089,20 @@ export default function App() {
         currentY = 20;
       }
       const line = rawLines[i];
+      const trimmed = line.trim();
+
+      // Empty lines = paragraph break — use compact 3pt gap instead of full line height
+      if (trimmed.length === 0) {
+        currentY += 3;
+        continue;
+      }
+
+      // Bold heading lines get a small extra top margin for visual separation
+      const isBoldHeading = /^\*\*[^*]+\*\*$/.test(trimmed);
+      if (isBoldHeading && i > 0) {
+        currentY += 2;
+      }
+
       // Split line into segments: normal text and **bold** text
       const parts = line.split(/(\*\*.*?\*\*)/);
       let xPos = 15;
@@ -1062,15 +1110,17 @@ export default function App() {
         if (part.startsWith('**') && part.endsWith('**')) {
           const boldText = part.slice(2, -2);
           doc.setFont('helvetica', 'bold');
+          doc.setTextColor(30, 41, 59);
           doc.text(boldText, xPos, currentY);
           xPos += doc.getTextWidth(boldText);
           doc.setFont('helvetica', 'normal');
+          doc.setTextColor(51, 65, 85);
         } else {
           doc.text(part, xPos, currentY);
           xPos += doc.getTextWidth(part);
         }
       }
-      currentY += 7;
+      currentY += 6;
     }
 
     // Direct jsPDF save — produces a proper .pdf download
@@ -2432,13 +2482,13 @@ export default function App() {
                             </div>
                             <div className="overflow-y-auto custom-scrollbar flex-1 pb-2">
                               {activeReportTab === 'radiologist' ? (
-                                <div className={`text-[14px] leading-[1.85] p-6 rounded-xl border shadow-inner prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-strong:font-bold
+                                <div className={`text-[14px] leading-[1.85] p-6 rounded-xl border shadow-inner prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-strong:font-bold
                                   ${theme === 'dark' ? 'bg-black/30 border-white/5 text-gray-200 prose-invert prose-strong:text-white' : 'bg-gray-50 border-gray-200 text-gray-700 prose-strong:text-gray-900'}`}
                                   style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 400, letterSpacing: '0.01em' }}>
                                   <ReactMarkdown>{reportsData.radiologist}</ReactMarkdown>
                                 </div>
                               ) : (
-                                <div className={`text-[15px] leading-[1.9] p-6 rounded-xl border shadow-inner prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-strong:font-bold
+                                <div className={`text-[15px] leading-[1.9] p-6 rounded-xl border shadow-inner prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-strong:font-bold
                                   ${theme === 'dark' ? 'bg-gradient-to-br from-[#00D4FF]/5 to-[#FF0080]/5 border-white/5 text-gray-200 prose-invert prose-strong:text-white' : 'bg-gradient-to-br from-blue-50/50 to-pink-50/50 border-gray-200 text-gray-700 prose-strong:text-gray-900'}`}
                                   style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 400, letterSpacing: '0.015em' }}>
                                   <ReactMarkdown>{reportsData.patient}</ReactMarkdown>
@@ -2787,7 +2837,7 @@ export default function App() {
                                   <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay z-0" />
                                 </>
                               )}
-                              <div className={`relative z-10 prose prose-bold-override prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 ${theme === 'dark' ? 'prose-invert marker:text-[#00D4FF]' : 'marker:text-blue-500'}`}>
+                              <div className={`relative z-10 prose max-w-none prose-bold-override prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 ${theme === 'dark' ? 'prose-invert marker:text-[#00D4FF]' : 'marker:text-blue-500'}`}>
                                 <ReactMarkdown>{msg.content}</ReactMarkdown>
                               </div>
                             </div>

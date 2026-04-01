@@ -68,6 +68,7 @@ CDSS is an **AI-powered Clinical Decision Support System** that performs automat
 | **React 19** | Component-based UI framework |
 | **Vite 8** | Lightning-fast build tool & HMR dev server |
 | **Tailwind CSS 4** | Utility-first styling with dark/light theme support |
+| **@tailwindcss/typography** | Prose formatting for AI-generated markdown (reports & chat) |
 | **Framer Motion** | Page transitions & micro-animations |
 | **jsPDF** | Client-side PDF report generation |
 | **Web Speech API** | Speech-to-text (mic input) & text-to-speech (voice output) |
